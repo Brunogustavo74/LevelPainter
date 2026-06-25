@@ -43,10 +43,9 @@ namespace LevelPainter
             return true;
         }
 
-        public bool Replace(Vector3Int cell, PlacedTile tile)
+        public void Replace(Vector3Int cell, PlacedTile tile)
         {
             _grid[cell] = tile;
-            return true;
         }
 
         public bool Remove(Vector3Int cell) => _grid.Remove(cell);
@@ -72,7 +71,9 @@ namespace LevelPainter
                     x = cell.x,
                     y = cell.y,
                     z = cell.z,
+                    rotationX = placed.RotationX,
                     rotationY = placed.RotationY,
+                    rotationZ = placed.RotationZ,
                     prefabPath = prefabPath,
                     category = placed.Category.ToString(),
                     tileName = placed.TileName
@@ -109,18 +110,23 @@ namespace LevelPainter
         public GameObject SourcePrefab { get; set; }
         public TileCategory Category { get; set; }
         public string TileName { get; set; }
+        public float RotationX { get; set; }
         public float RotationY { get; set; }
+        public float RotationZ { get; set; }
 
         public PlacedTile() { }
 
         public PlacedTile(GameObject instance, GameObject sourcePrefab,
-                          TileCategory category, string tileName, float rotationY)
+                          TileCategory category, string tileName, 
+                          float rotationX, float rotationY, float rotationZ)
         {
             Instance = instance;
             SourcePrefab = sourcePrefab;
             Category = category;
             TileName = tileName;
+            RotationX = rotationX;
             RotationY = rotationY;
+            RotationZ = rotationZ;
         }
     }
 }

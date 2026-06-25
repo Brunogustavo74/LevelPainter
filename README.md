@@ -1,11 +1,11 @@
-# 🗺 Level Painter
+# 🗺 Level Painter (Em Desenvolvimento 🚧)
 
-Ferramenta de editor para Unity que permite pintar tiles 3D diretamente na Scene View, com suporte a empilhamento, snap automático por bounds, paleta de tiles por categoria, e salvamento/carregamento de mapas em JSON.
+Ferramenta de editor para Unity em desenvolvimento ativo que permite pintar tiles 3D diretamente na Scene View, com suporte a empilhamento, snap automático por bounds.
 
 ---
 
 ## Sumário
-
+ 
 - [Visão Geral](#visão-geral)
 - [Estrutura de Arquivos](#estrutura-de-arquivos)
 - [Como Instalar](#como-instalar)
@@ -59,7 +59,7 @@ Os arquivos de `Editor/` só existem no contexto do editor do Unity (dentro de u
 2. O Unity vai compilar automaticamente. Nenhuma dependência externa é necessária — só a URP ou pipeline padrão.
 3. Crie uma **Level Palette** indo em `Assets → botão direito → Criar → Level Painter → Level Palette`.
 4. No asset criado, popule a lista de tiles no Inspector (nome, prefab, categoria, ícone opcional).
-5. Abra a ferramenta pelo menu `Tools → Level Painter` (atalho: `Ctrl+Shift+L`).
+5. Abra a ferramenta pelo menu `Tools → Level Painter` (atalho: `Ctrl+Shift+M`).
 
 ---
 
@@ -67,7 +67,7 @@ Os arquivos de `Editor/` só existem no contexto do editor do Unity (dentro de u
 
 ### Abrindo a ferramenta
 
-`Tools → Level Painter` ou `Ctrl+Shift+L`. Uma janela flutuante abre. Ela pode ser encaixada em qualquer lugar do layout do Unity.
+`Tools → Level Painter` ou `Ctrl+Shift+M`. Uma janela flutuante abre com um visual escuro moderno. Ela é dividida em dois painéis principais: controles à esquerda e canvas/paleta expansível à direita.
 
 ### Configurando a paleta
 
@@ -75,7 +75,7 @@ No campo **"Asset da Paleta"**, arraste o seu asset `LevelPalette`. A paleta apa
 
 ### Iniciando a pintura
 
-Clique no botão **"○ Iniciar Pintura"** (ou `Ctrl+Shift+L` de novo). O botão fica verde e mostra **"● Pintando"**. A partir daqui, a Scene View responde aos cliques do Level Painter.
+Clique no botão roxo grande **"▶ Iniciar Pintura"**. O botão ficará vermelho (**"⏹ Parar Pintura"**). A partir daqui, a Scene View responderá aos cliques do Level Painter.
 
 ### Ferramentas disponíveis
 
@@ -247,7 +247,7 @@ Arrastar o mouse com o botão pressionado pinta em células XZ diferentes, mas *
 
 ## Salvar e Carregar Mapas
 
-Clique em **"💾 Salvar/Carregar"** na barra superior para expandir a seção.
+Vá até a aba **"⚡ Ações"** no painel de controle à esquerda da janela.
 
 ### Salvando
 

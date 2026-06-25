@@ -27,7 +27,7 @@ namespace LevelPainter
         private string _buscaQuery = "";
         private Vector2 _scrollPaleta;
         private TileItem _tileSelecionado;
-
+        private Queue<TileItem> _tilesRecentes = new();
 
         private float _tamanhoGrade = 1f;
         private float _camadaPinturaY = 0f;
@@ -39,15 +39,20 @@ namespace LevelPainter
         private string _nomeDoMapa = "MeuNivel";
         private string _statusMsg = "Pronto";
 
-        private static readonly Color CorPincel = new Color(0.20f, 0.80f, 0.30f);
-        private static readonly Color CorBorracha = new Color(0.90f, 0.30f, 0.20f);
-        private static readonly Color CorSubstituir = new Color(0.90f, 0.70f, 0.10f);
-        private static readonly Color CorPainelEsc = new Color(0.15f, 0.15f, 0.15f);
-        private static readonly Color CorDestaque = new Color(0.25f, 0.55f, 0.95f);
+        private static readonly Color BgColor = new Color(0.10f, 0.09f, 0.12f);
+        private static readonly Color PanelColor = new Color(0.13f, 0.12f, 0.16f);
+        private static readonly Color BorderColor = new Color(0.18f, 0.17f, 0.22f);
+        private static readonly Color PurpleAccent = new Color(0.45f, 0.35f, 0.80f);
+        private static readonly Color TextNormal = new Color(0.60f, 0.60f, 0.65f);
+        private static readonly Color TextHigh = new Color(0.90f, 0.90f, 0.95f);
+
+        private static readonly Color CorPincel = new Color(0.25f, 0.65f, 0.35f);
+        private static readonly Color CorBorracha = new Color(0.85f, 0.25f, 0.25f);
+        private static readonly Color CorSubstituir = new Color(0.85f, 0.65f, 0.15f);
 
 
 
-        [MenuItem("Tools/Level Painter %#l", priority = 200)]
+        [MenuItem("Tools/Level Painter %#m", priority = 200)]
         public static void MostrarJanela()
         {
             var w = GetWindow<LevelPainterWindow>(TituloJanela);
@@ -68,6 +73,7 @@ namespace LevelPainter
             _scene = new LevelPainterScene();
             _scene.SetDatabase(_db);
             _scene.RepaintRequest = Repaint;
+            _scene.OnEyedropperPick += AoPegarTileComContaGotas;
 
             string caminhoSalvo = EditorPrefs.GetString(PrefChavePaleta, "");
             if (!string.IsNullOrEmpty(caminhoSalvo))
@@ -82,6 +88,7 @@ namespace LevelPainter
             SceneView.duringSceneGui -= AoSceneGUI;
             Undo.undoRedoPerformed -= AoDesfazerRefazer;
 
+            if (_scene != null) _scene.OnEyedropperPick -= AoPegarTileComContaGotas;
             if (_pintando) PararPintura();
             _scene?.Cleanup();
 
@@ -104,107 +111,245 @@ namespace LevelPainter
 
 
 
+        private GUIStyle _tituloJanelaStyle;
+        private GUIStyle _subtituloStyle;
+        private GUIStyle _panelTitleStyle;
+        private GUIStyle _panelStyle;
+        private GUIStyle _whiteLabelStyle;
+        private GUIStyle _whiteMiniLabelStyle;
+
+        private void SetTextColor(GUIStyle style, Color c)
+        {
+            style.normal.textColor = c;
+            style.hover.textColor = c;
+            style.active.textColor = c;
+            style.focused.textColor = c;
+            style.onNormal.textColor = c;
+            style.onHover.textColor = c;
+            style.onActive.textColor = c;
+            style.onFocused.textColor = c;
+        }
+
+        private void InitStyles()
+        {
+            if (_tituloJanelaStyle != null) return;
+            
+            _tituloJanelaStyle = new GUIStyle(EditorStyles.boldLabel);
+            _tituloJanelaStyle.fontSize = 24;
+            _tituloJanelaStyle.alignment = TextAnchor.MiddleLeft;
+            SetTextColor(_tituloJanelaStyle, new Color(0.65f, 0.55f, 0.95f));
+
+            _subtituloStyle = new GUIStyle(EditorStyles.label);
+            _subtituloStyle.fontSize = 11;
+            _subtituloStyle.alignment = TextAnchor.MiddleLeft;
+            SetTextColor(_subtituloStyle, TextNormal);
+
+            _panelTitleStyle = new GUIStyle(EditorStyles.boldLabel);
+            _panelTitleStyle.fontSize = 13;
+            SetTextColor(_panelTitleStyle, TextHigh);
+
+            _whiteLabelStyle = new GUIStyle(EditorStyles.label);
+            SetTextColor(_whiteLabelStyle, TextHigh);
+
+            _whiteMiniLabelStyle = new GUIStyle(EditorStyles.miniLabel);
+            _whiteMiniLabelStyle.alignment = TextAnchor.MiddleCenter;
+            SetTextColor(_whiteMiniLabelStyle, TextHigh);
+
+            _panelStyle = new GUIStyle();
+            _panelStyle.padding = new RectOffset(16, 16, 16, 16);
+            _panelStyle.margin = new RectOffset(10, 10, 10, 10);
+        }
+
         private void OnGUI()
         {
-            DesenharBarraSuperior();
-            DesenharModoAtivo();
-
-            _scrollPrincipal = EditorGUILayout.BeginScrollView(_scrollPrincipal);
-            DesenharSecaoPaleta();
-            DesenharSecaoCamada();
-            DesenharSecaoGrade();
-            DesenharInfoSelecao();
-            if (_mostrarSalvarCarregar) DesenharSecaoSalvarCarregar();
-            if (_mostrarSettings) DesenharSecaoSettings();
-            EditorGUILayout.EndScrollView();
-
-            DesenharBarraStatus();
-        }
-
-
-        private void DesenharBarraSuperior()
-        {
-            Color prev = GUI.backgroundColor;
-            GUI.backgroundColor = CorPainelEsc;
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            GUI.backgroundColor = prev;
-
-            GUILayout.Label("🗺 Level Painter", EditorStyles.boldLabel, GUILayout.Width(120f));
-            GUILayout.FlexibleSpace();
-
-            Color corBotao = _pintando ? new Color(0.2f, 0.7f, 0.3f) : new Color(0.4f, 0.4f, 0.4f);
-            GUI.backgroundColor = corBotao;
-            string labelPintura = _pintando ? "● Pintando" : "○ Iniciar Pintura";
-            if (GUILayout.Button(labelPintura, EditorStyles.toolbarButton, GUILayout.Width(115f)))
-                AlternarPintura();
-            GUI.backgroundColor = prev;
-
-            GUILayout.Space(4f);
-            _mostrarSalvarCarregar = GUILayout.Toggle(
-                _mostrarSalvarCarregar, "💾 Salvar/Carregar",
-                EditorStyles.toolbarButton, GUILayout.Width(105f));
-            _mostrarSettings = GUILayout.Toggle(
-                _mostrarSettings, "⚙", EditorStyles.toolbarButton, GUILayout.Width(24f));
-
-            EditorGUILayout.EndHorizontal();
-        }
-
-        private void DesenharModoAtivo()
-        {
-            if (!_pintando)
+            if (_scene == null || _db == null)
             {
-                EditorGUILayout.HelpBox(
-                    "Clique em 'Iniciar Pintura' para ativar o pintor na Scene View.",
-                    MessageType.Info);
-                return;
+                OnEnable();
+                if (_scene == null) return;
             }
 
-            EditorGUILayout.BeginVertical(GUI.skin.box);
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Ferramenta:", GUILayout.Width(72f));
-
-            DesenharBotaoFerramenta(PainterTool.Pincel, "✏ Pincel", CorPincel, "B");
-            DesenharBotaoFerramenta(PainterTool.Borracha, "✕ Borracha", CorBorracha, "E");
-            DesenharBotaoFerramenta(PainterTool.Substituir, "↺ Substituir", CorSubstituir, "T");
-            EditorGUILayout.EndHorizontal();
+            InitStyles();
+            
+            EditorGUI.DrawRect(new Rect(0, 0, position.width, position.height), BgColor);
 
             EditorGUILayout.BeginHorizontal();
-            GUILayout.Space(76f);
-            DesenharBotaoFerramenta(PainterTool.Retangulo, "🔲 Retângulo", CorPincel, "U");
-            DesenharBotaoFerramenta(PainterTool.Linha, "➖ Linha", CorPincel, "I");
-            GUILayout.FlexibleSpace();
 
-            GUILayout.Label($"Rot: {_scene.CurrentRotationY:F0}°", GUILayout.Width(64f));
-            if (GUILayout.Button("↩", GUILayout.Width(24f)))
-            {
-                _scene.ResetRotation();
-                Repaint();
-            }
-            EditorGUILayout.EndHorizontal();
+            // LEFT PANEL
+            EditorGUILayout.BeginVertical(GUILayout.Width(280));
+            GUILayout.Space(20);
+            
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(15);
+            GUILayout.BeginVertical();
+            GUILayout.Label("LevelPainter", _tituloJanelaStyle);
+            GUILayout.Label("v1.0.0", _subtituloStyle);
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            
+            GUILayout.Space(15);
+            
+            DesenharLeftPanel();
+            
             EditorGUILayout.EndVertical();
 
-            if (_scene.IsHoveringValid)
-            {
-                var cell = _scene.HoveredCell;
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.Label($"Célula: ({cell.x}, {cell.y}, {cell.z})", EditorStyles.miniLabel);
-                GUILayout.Label(
-                    _tileSelecionado != null ? $"📦 {_tileSelecionado.tileName}" : "— Nenhum —",
-                    EditorStyles.miniLabel);
-                EditorGUILayout.EndHorizontal();
-            }
+            // RIGHT PANEL
+            EditorGUILayout.BeginVertical();
+            GUILayout.Space(20);
+            DesenharRightPanel();
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.EndHorizontal();
         }
 
-        private void DesenharBotaoFerramenta(
-            PainterTool ferramenta, string label, Color cor, string atalho)
+        private void DrawPanel(Action content)
+        {
+            Rect r = EditorGUILayout.BeginVertical(_panelStyle);
+            EditorGUI.DrawRect(r, PanelColor);
+            
+            // Borders
+            EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, 1), BorderColor);
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - 1, r.width, 1), BorderColor);
+            EditorGUI.DrawRect(new Rect(r.x, r.y, 1, r.height), BorderColor);
+            EditorGUI.DrawRect(new Rect(r.xMax - 1, r.y, 1, r.height), BorderColor);
+
+            content();
+            EditorGUILayout.EndVertical();
+        }
+
+
+        private void DesenharLeftPanel()
+        {
+            _scrollPrincipal = EditorGUILayout.BeginScrollView(_scrollPrincipal);
+            
+            // Big Paint Button
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(10);
+            Color prevColor = GUI.backgroundColor;
+            GUI.backgroundColor = _pintando ? new Color(0.8f, 0.3f, 0.3f) : PurpleAccent;
+            GUIStyle btnPaint = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold };
+            btnPaint.normal.textColor = Color.white;
+            string labelPaint = _pintando ? "⏹ Parar Pintura" : "▶ Iniciar Pintura";
+            if (GUILayout.Button(labelPaint, btnPaint, GUILayout.Height(36), GUILayout.Width(250)))
+                AlternarPintura();
+            GUI.backgroundColor = prevColor;
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+
+            // Ferramentas
+            DrawPanel(() => 
+            {
+                GUILayout.Label("🛠 Ferramentas", _panelTitleStyle);
+                GUILayout.Space(12);
+
+                EditorGUILayout.BeginHorizontal();
+                DesenharBotaoFerramenta(PainterTool.Pincel, "Pincel", CorPincel, 75);
+                DesenharBotaoFerramenta(PainterTool.Borracha, "Borracha", CorBorracha, 75);
+                DesenharBotaoFerramenta(PainterTool.Substituir, "Trocar", CorSubstituir, 75);
+                EditorGUILayout.EndHorizontal();
+                
+                GUILayout.Space(8);
+
+                EditorGUILayout.BeginHorizontal();
+                DesenharBotaoFerramenta(PainterTool.Retangulo, "Retângulo", CorPincel, 115);
+                DesenharBotaoFerramenta(PainterTool.Linha, "Linha", CorPincel, 115);
+                EditorGUILayout.EndHorizontal();
+
+                GUILayout.Space(12);
+                
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label($"Rotação: {_scene.CurrentRotationY:F0}°", _subtituloStyle, GUILayout.Width(90));
+                GUI.backgroundColor = new Color(0.25f, 0.25f, 0.28f);
+                if (GUILayout.Button("↩ Reset", GUILayout.Height(20f), GUILayout.Width(60f)))
+                {
+                    _scene.ResetRotation();
+                    Repaint();
+                }
+                GUI.backgroundColor = prevColor;
+                EditorGUILayout.EndHorizontal();
+            });
+
+            // Camadas e Raycast
+            DrawPanel(() => 
+            {
+                GUILayout.Label("📚 Camadas", _panelTitleStyle);
+                GUILayout.Space(12);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Raycast", _subtituloStyle, GUILayout.Width(70));
+                _scene.CurrentRaycastMode = (RaycastMode)EditorGUILayout.EnumPopup(_scene.CurrentRaycastMode);
+                EditorGUILayout.EndHorizontal();
+                
+                GUILayout.Space(8);
+
+                GUI.enabled = _scene.CurrentRaycastMode == RaycastMode.PlanoFixo;
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Camada Y", _subtituloStyle, GUILayout.Width(70));
+                float novoY = EditorGUILayout.Slider(_camadaPinturaY, -10f, 20f);
+                if (!Mathf.Approximately(novoY, _camadaPinturaY))
+                {
+                    _camadaPinturaY = novoY;
+                    _scene.PaintLayerY = _camadaPinturaY;
+                }
+                EditorGUILayout.EndHorizontal();
+                GUI.enabled = true;
+            });
+
+            // Grade e Assets
+            DrawPanel(() => 
+            {
+                GUILayout.Label("📐 Configurações", _panelTitleStyle);
+                GUILayout.Space(12);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Paleta", _subtituloStyle, GUILayout.Width(50));
+                EditorGUI.BeginChangeCheck();
+                _palette = (LevelPalette)EditorGUILayout.ObjectField(_palette, typeof(LevelPalette), false);
+                if (EditorGUI.EndChangeCheck() && _palette != null)
+                    EditorPrefs.SetString(PrefChavePaleta, AssetDatabase.GetAssetPath(_palette));
+                EditorGUILayout.EndHorizontal();
+                
+                GUILayout.Space(8);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("Grade", _subtituloStyle, GUILayout.Width(50));
+                EditorGUI.BeginChangeCheck();
+                _tamanhoGrade = EditorGUILayout.FloatField(_tamanhoGrade);
+                if (EditorGUI.EndChangeCheck())
+                    _tamanhoGrade = Mathf.Max(0.1f, _tamanhoGrade);
+                EditorGUILayout.EndHorizontal();
+            });
+
+            // Ações
+            DrawPanel(() => 
+            {
+                GUILayout.Label("⚡ Ações", _panelTitleStyle);
+                GUILayout.Space(12);
+
+                _nomeDoMapa = EditorGUILayout.TextField(_nomeDoMapa);
+                GUILayout.Space(6);
+                
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("Salvar", GUILayout.Height(24))) SalvarMapa();
+                if (GUILayout.Button("Carregar", GUILayout.Height(24))) CarregarMapa();
+                EditorGUILayout.EndHorizontal();
+            });
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DesenharBotaoFerramenta(PainterTool ferramenta, string label, Color cor, float width)
         {
             Color prev = GUI.backgroundColor;
             bool selecionado = _scene.CurrentTool == ferramenta;
-            GUI.backgroundColor = selecionado ? cor : new Color(0.3f, 0.3f, 0.3f);
+            GUI.backgroundColor = selecionado ? cor : new Color(0.22f, 0.20f, 0.26f);
 
-            if (GUILayout.Button(
-                    new GUIContent(label, $"Atalho: {atalho}"),
-                    GUILayout.Height(22f), GUILayout.Width(88f)))
+            GUIStyle style = new GUIStyle(GUI.skin.button);
+            style.fontSize = 11;
+            if (selecionado) style.fontStyle = FontStyle.Bold;
+            SetTextColor(style, selecionado ? Color.white : TextHigh);
+
+            if (GUILayout.Button(label, style, GUILayout.Height(26f), GUILayout.Width(width)))
             {
                 _scene.CurrentTool = ferramenta;
                 DefinirStatus($"Ferramenta: {ferramenta}");
@@ -212,39 +357,75 @@ namespace LevelPainter
             GUI.backgroundColor = prev;
         }
 
-
-
-        private void DesenharSecaoPaleta()
+        private void DesenharRightPanel()
         {
-            DesenharCabecalhoSecao("🎨 Paleta de Tiles");
-
-            EditorGUI.BeginChangeCheck();
-            _palette = (LevelPalette)EditorGUILayout.ObjectField(
-                "Asset da Paleta", _palette, typeof(LevelPalette), false);
-            if (EditorGUI.EndChangeCheck() && _palette != null)
-                EditorPrefs.SetString(PrefChavePaleta, AssetDatabase.GetAssetPath(_palette));
-
-            if (_palette == null)
-            {
-                EditorGUILayout.HelpBox(
-                    "Arraste um LevelPalette aqui ou crie um novo.\n" +
-                    "Botão direito no Projeto → Criar → Level Painter → Level Palette",
-                    MessageType.Warning);
-                if (GUILayout.Button("Criar Nova Paleta"))
-                    CriarNovaPaleta();
-                return;
-            }
-
-
             EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("🔍", GUILayout.Width(18f));
-            _buscaQuery = EditorGUILayout.TextField(_buscaQuery, EditorStyles.toolbarSearchField);
-            if (GUILayout.Button("✕", EditorStyles.toolbarButton, GUILayout.Width(20f)))
-                _buscaQuery = "";
+            GUILayout.Label("🎨 Paleta de Tiles", _tituloJanelaStyle);
+            
+            if (_scene.IsHoveringValid)
+            {
+                GUILayout.FlexibleSpace();
+                GUI.backgroundColor = PanelColor;
+                GUIStyle coordStyle = new GUIStyle(GUI.skin.box);
+                SetTextColor(coordStyle, TextNormal);
+                GUILayout.Label($"X: {_scene.HoveredCell.x}, Y: {_scene.HoveredCell.y}, Z: {_scene.HoveredCell.z}", coordStyle);
+                GUI.backgroundColor = Color.white;
+            }
             EditorGUILayout.EndHorizontal();
+            
+            GUILayout.Label("Selecione um tile e pinte seu nível diretamente no canvas (Scene View).", _subtituloStyle);
+            GUILayout.Space(10);
+            
+            DrawPanel(() => 
+            {
+                if (_palette == null)
+                {
+                    EditorGUILayout.HelpBox("Nenhuma paleta configurada na aba de configurações.", MessageType.Warning);
+                    return;
+                }
 
-            DesenharAbas();
-            DesenharGradeTiles();
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("🔍 Buscar:", _subtituloStyle, GUILayout.Width(60));
+                _buscaQuery = EditorGUILayout.TextField(_buscaQuery, EditorStyles.toolbarSearchField);
+                if (GUILayout.Button("✕", EditorStyles.toolbarButton, GUILayout.Width(20f)))
+                    _buscaQuery = "";
+                EditorGUILayout.EndHorizontal();
+                GUILayout.Space(10);
+
+                DesenharTilesRecentes();
+                DesenharAbas();
+                DesenharGradeTiles();
+            });
+            
+            GUILayout.FlexibleSpace();
+            DesenharBarraStatus();
+        }
+
+
+
+        // Old methods removed/merged
+
+        private void DesenharTilesRecentes()
+        {
+            if (_tilesRecentes.Count == 0) return;
+
+            EditorGUILayout.BeginVertical();
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("⏱ Recentes:", _subtituloStyle, GUILayout.Width(70f));
+            
+            var recentesList = _tilesRecentes.Reverse().ToList();
+            foreach (var t in recentesList)
+            {
+                if (GUILayout.Button(new GUIContent(t.icon != null ? t.icon.texture : null, t.tileName), 
+                                     GUILayout.Width(28f), GUILayout.Height(28f)))
+                {
+                    _categoriaAtiva = t.category;
+                    SelecionarTile(t);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+            GUILayout.Space(4f);
         }
 
         private void DesenharAbas()
@@ -254,7 +435,7 @@ namespace LevelPainter
             {
                 bool ativo = cat == _categoriaAtiva;
                 Color prev = GUI.backgroundColor;
-                GUI.backgroundColor = ativo ? CorDestaque : new Color(0.25f, 0.25f, 0.25f);
+                GUI.backgroundColor = ativo ? PurpleAccent : new Color(0.20f, 0.19f, 0.24f);
 
                 string icone = cat switch
                 {
@@ -265,12 +446,21 @@ namespace LevelPainter
                     TileCategory.Vegetacao => "🌿",
                     _ => "■"
                 };
-                if (GUILayout.Button($"{icone} {cat}", GUILayout.Height(20f)))
+                
+                int count = _palette == null ? 0 : _palette.GetByCategory(cat).Count();
+                GUIStyle abaStyle = new GUIStyle(EditorStyles.toolbarButton);
+                abaStyle.fontSize = 11;
+                abaStyle.fontStyle = ativo ? FontStyle.Bold : FontStyle.Normal;
+                abaStyle.fixedHeight = 26f;
+                SetTextColor(abaStyle, ativo ? Color.white : TextNormal);
+                
+                if (GUILayout.Button($"{icone} {cat} ({count})", abaStyle))
                     _categoriaAtiva = cat;
 
                 GUI.backgroundColor = prev;
             }
             EditorGUILayout.EndHorizontal();
+            GUILayout.Space(12f);
         }
 
         private void DesenharGradeTiles()
@@ -325,7 +515,7 @@ namespace LevelPainter
         {
             bool selecionado = _tileSelecionado == tile;
             Color prev = GUI.backgroundColor;
-            GUI.backgroundColor = selecionado ? CorDestaque : new Color(0.22f, 0.22f, 0.22f);
+            GUI.backgroundColor = selecionado ? PurpleAccent : new Color(0.18f, 0.17f, 0.22f);
 
             Rect r = GUILayoutUtility.GetRect(
                 TamanhItemPaleta, TamanhItemPaleta + 16f,
@@ -333,15 +523,15 @@ namespace LevelPainter
 
 
             EditorGUI.DrawRect(r, selecionado
-                ? new Color(0.20f, 0.45f, 0.85f, 0.40f)
-                : new Color(0.20f, 0.20f, 0.20f, 0.60f));
+                ? new Color(0.45f, 0.35f, 0.80f, 0.40f) // Purple tint
+                : new Color(0.16f, 0.15f, 0.20f, 0.60f));
 
 
             if (selecionado)
             {
                 Handles.BeginGUI();
-                Handles.color = CorDestaque;
-                Handles.DrawSolidRectangleWithOutline(r, Color.clear, CorDestaque);
+                Handles.color = PurpleAccent;
+                Handles.DrawSolidRectangleWithOutline(r, Color.clear, PurpleAccent);
                 Handles.EndGUI();
             }
 
@@ -378,11 +568,12 @@ namespace LevelPainter
             }
 
             Rect labelRect = new Rect(r.x, r.y + r.height - 18f, r.width, 18f);
-            GUI.Label(labelRect, tile.tileName, new GUIStyle(EditorStyles.miniLabel)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = selecionado ? Color.white : Color.gray }
-            });
+            
+            GUIStyle tileLabelStyle = new GUIStyle(EditorStyles.miniLabel);
+            tileLabelStyle.alignment = TextAnchor.MiddleCenter;
+            SetTextColor(tileLabelStyle, selecionado ? Color.white : TextNormal);
+            
+            GUI.Label(labelRect, tile.tileName, tileLabelStyle);
 
 
             if (Event.current.type == EventType.MouseDown &&
@@ -400,87 +591,35 @@ namespace LevelPainter
             _tileSelecionado = tile;
             _scene.SelectedTile = tile;
             DefinirStatus($"Selecionado: {tile.tileName}");
+
+            if (tile != null && !_tilesRecentes.Contains(tile))
+            {
+                if (_tilesRecentes.Count >= 5) _tilesRecentes.Dequeue();
+                _tilesRecentes.Enqueue(tile);
+            }
+
             Repaint();
         }
 
-
-
-        private void DesenharSecaoCamada()
+        private void AoPegarTileComContaGotas(PlacedTile placed)
         {
-            DesenharCabecalhoSecao("🔧 Superfície e Camada");
-
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Raycast:", GUILayout.Width(68f));
-            _scene.CurrentRaycastMode = (RaycastMode)EditorGUILayout.EnumPopup(_scene.CurrentRaycastMode);
-            EditorGUILayout.EndHorizontal();
-
-            GUI.enabled = _scene.CurrentRaycastMode == RaycastMode.PlanoFixo;
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Camada Y:", GUILayout.Width(68f));
-            float novoY = EditorGUILayout.Slider(_camadaPinturaY, -10f, 20f);
-            if (!Mathf.Approximately(novoY, _camadaPinturaY))
+            if (_palette == null || placed == null) return;
+            var tile = _palette.Tiles.FirstOrDefault(t => t.tileName == placed.TileName && t.category == placed.Category);
+            if (tile != null)
             {
-                _camadaPinturaY = novoY;
-                _scene.PaintLayerY = _camadaPinturaY;
-            }
-            if (GUILayout.Button("0", GUILayout.Width(22f)))
-            {
-                _camadaPinturaY = 0f;
-                _scene.PaintLayerY = 0f;
-            }
-            EditorGUILayout.EndHorizontal();
-            GUI.enabled = true;
-        }
-
-
-
-        private void DesenharSecaoGrade()
-        {
-            DesenharCabecalhoSecao("📐 Configuração da Grade");
-            EditorGUI.BeginChangeCheck();
-            _tamanhoGrade = EditorGUILayout.FloatField("Tamanho da Célula", _tamanhoGrade);
-            if (EditorGUI.EndChangeCheck())
-            {
-                _tamanhoGrade = Mathf.Max(0.1f, _tamanhoGrade);
-                DefinirStatus($"Tamanho da grade: {_tamanhoGrade}");
+                _categoriaAtiva = tile.category;
+                SelecionarTile(tile);
             }
         }
 
 
 
-        private void DesenharInfoSelecao()
-        {
-            if (_scene?.SelectedPlacedTile == null) return;
-
-            DesenharCabecalhoSecao("ℹ️ Tile Selecionado");
-            var t = _scene.SelectedPlacedTile;
-            EditorGUILayout.LabelField("Nome", t.TileName);
-            EditorGUILayout.LabelField("Categoria", t.Category.ToString());
-            EditorGUILayout.LabelField("Posição", _scene.SelectedCell.ToString());
-            EditorGUILayout.LabelField("Rotação Y", $"{t.RotationY:F0}°");
-        }
-
-
-
-        private void DesenharSecaoSalvarCarregar()
-        {
-            DesenharCabecalhoSecao("💾 Salvar / Carregar");
-            _nomeDoMapa = EditorGUILayout.TextField("Nome do Mapa", _nomeDoMapa);
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("💾 Salvar Mapa"))
-                SalvarMapa();
-            if (GUILayout.Button("📂 Carregar Mapa"))
-                CarregarMapa();
-            EditorGUILayout.EndHorizontal();
-        }
+        // Old sections removed
 
         private void SalvarMapa()
         {
-            string caminho = EditorUtility.SaveFilePanel(
-                "Salvar Mapa do Nível", Application.dataPath, _nomeDoMapa, "json");
+            string caminho = EditorUtility.SaveFilePanel("Salvar Mapa do Nível", Application.dataPath, _nomeDoMapa, "json");
             if (string.IsNullOrEmpty(caminho)) return;
-
             try
             {
                 _db.SaveToFile(caminho, _nomeDoMapa);
@@ -496,24 +635,17 @@ namespace LevelPainter
 
         private void CarregarMapa()
         {
-            string caminho = EditorUtility.OpenFilePanel(
-                "Carregar Mapa do Nível", Application.dataPath, "json");
+            string caminho = EditorUtility.OpenFilePanel("Carregar Mapa do Nível", Application.dataPath, "json");
             if (string.IsNullOrEmpty(caminho)) return;
-
             if (_palette == null)
             {
-                EditorUtility.DisplayDialog(
-                    "Level Painter",
-                    "Atribua uma Paleta antes de carregar um mapa.",
-                    "OK");
+                EditorUtility.DisplayDialog("Level Painter", "Atribua uma Paleta antes de carregar um mapa.", "OK");
                 return;
             }
-
             try
             {
                 var dados = GridDatabase.LoadFromFile(caminho);
                 if (dados == null) { DefinirStatus("Falha ao carregar: arquivo inválido."); return; }
-
                 _nomeDoMapa = dados.mapName;
                 _scene.EnsureHierarchy();
                 _scene.RebuildFromMapData(dados, _palette);
@@ -527,46 +659,25 @@ namespace LevelPainter
         }
 
 
-
-        private void DesenharSecaoSettings()
-        {
-            DesenharCabecalhoSecao("⚙ Atalhos de Teclado");
-            EditorGUILayout.HelpBox(
-                "B — Pincel\n" +
-                "E — Borracha\n" +
-                "T — Substituir\n" +
-                "U — Retângulo (Preencher)\n" +
-                "I — Linha\n" +
-                "R — Girar 90°\n" +
-                "LMB — Pintar\n" +
-                "RMB — Apagar",
-                MessageType.None);
-        }
-
-
         private void DesenharBarraStatus()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             string statusPintura = _pintando ? "● Ativo" : "○ Inativo";
-            GUILayout.Label(statusPintura, EditorStyles.miniLabel, GUILayout.Width(60f));
-            GUILayout.Label(_statusMsg, EditorStyles.miniLabel);
+            
+            GUIStyle statusStyle = new GUIStyle(EditorStyles.miniLabel);
+            SetTextColor(statusStyle, TextHigh);
+
+            GUILayout.Label(statusPintura, statusStyle, GUILayout.Width(60f));
+            GUILayout.Label(_statusMsg, statusStyle);
             GUILayout.FlexibleSpace();
             int total = _db?.Grid.Count ?? 0;
-            GUILayout.Label($"Tiles: {total}", EditorStyles.miniLabel, GUILayout.Width(70f));
+            GUILayout.Label($"Tiles: {total}", statusStyle, GUILayout.Width(70f));
             EditorGUILayout.EndHorizontal();
         }
 
 
 
-        private void DesenharCabecalhoSecao(string titulo)
-        {
-            GUILayout.Space(4f);
-            Rect r = GUILayoutUtility.GetRect(0f, 20f, GUILayout.ExpandWidth(true));
-            EditorGUI.DrawRect(r, new Color(0.13f, 0.13f, 0.13f));
-            GUI.Label(new Rect(r.x + 6f, r.y + 2f, r.width, r.height), titulo,
-                new GUIStyle(EditorStyles.boldLabel) { fontSize = 11 });
-            GUILayout.Space(2f);
-        }
+        // Removed DesenharCabecalhoSecao
 
 
 
@@ -626,14 +737,16 @@ namespace LevelPainter
                     if (filho == null) continue;
                     var cell = _db.WorldToCell(filho.position);
                     var prefab = PrefabUtility.GetCorrespondingObjectFromSource(filho.gameObject);
+                    float rotX = filho.eulerAngles.x;
                     float rotY = filho.eulerAngles.y;
+                    float rotZ = filho.eulerAngles.z;
 
                     string nomeTile = "Desconhecido";
                     foreach (var t in _palette.Tiles)
                     {
                         if (t.prefab == prefab) { nomeTile = t.tileName; break; }
                     }
-                    _db.Place(cell, new PlacedTile(filho.gameObject, prefab, cat, nomeTile, rotY));
+                    _db.Place(cell, new PlacedTile(filho.gameObject, prefab, cat, nomeTile, rotX, rotY, rotZ));
                 }
             }
         }

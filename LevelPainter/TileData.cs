@@ -66,7 +66,9 @@ namespace LevelPainter
         public int x;
         public int y;
         public int z;
+        public float rotationX;
         public float rotationY;
+        public float rotationZ;
         public string prefabPath;
         public string category;
         public string tileName;

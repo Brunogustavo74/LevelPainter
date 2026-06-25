@@ -39,6 +39,11 @@ namespace LevelPainter
         public void AddTile(TileItem tile)
         {
             if (tile == null) return;
+            if (_tiles.Any(t => t.tileName == tile.tileName && t.category == tile.category))
+            {
+                Debug.LogWarning($"[LevelPainter] Tile '{tile.tileName}' already exists in category '{tile.category}'.");
+                return;
+            }
             _tiles.Add(tile);
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);

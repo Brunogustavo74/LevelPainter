@@ -7,7 +7,9 @@ namespace LevelPainter
     public enum PainterTool { Pincel, Borracha, Substituir, Retangulo, Linha }
     public enum RaycastMode { PlanoFixo, ColisoresFisicos }
 
+ 
 
+ 
     public class LevelPainterScene
     {
 
@@ -53,8 +55,10 @@ namespace LevelPainter
 
 
         public System.Action RepaintRequest;
+        public System.Action<PlacedTile> OnEyedropperPick;
 
-
+        private static Dictionary<(TileItem, float), Vector3> _snapOffsetCache = new();
+        private static Dictionary<(TileItem, float), float> _pivotOffsetCache = new();
 
         public LevelPainterScene()
         {
@@ -141,6 +145,17 @@ namespace LevelPainter
                 HideGhost();
             }
 
+
+            if (e.type == EventType.MouseDown && e.button == 0 && e.alt && hitPlane)
+            {
+                Vector3Int targetCell = FindOccupiedCellInColumn(HoveredCell);
+                if (_db.TryGet(targetCell, out var placed))
+                {
+                    OnEyedropperPick?.Invoke(placed);
+                }
+                e.Use();
+                RepaintRequest?.Invoke();
+            }
 
             if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && hitPlane)
             {
@@ -231,6 +246,16 @@ namespace LevelPainter
                     e.Use();
                     RepaintRequest?.Invoke();
                     break;
+                case KeyCode.U:
+                    CurrentTool = PainterTool.Retangulo;
+                    e.Use();
+                    RepaintRequest?.Invoke();
+                    break;
+                case KeyCode.I:
+                    CurrentTool = PainterTool.Linha;
+                    e.Use();
+                    RepaintRequest?.Invoke();
+                    break;
             }
         }
 
@@ -243,7 +268,7 @@ namespace LevelPainter
                     _lastPaintedXZ = new Vector2Int(HoveredCell.x, HoveredCell.z);
                     break;
                 case PainterTool.Borracha:
-                    EraseColumn(HoveredCell);
+                    EraseTile(FindOccupiedCellInColumn(HoveredCell));
                     _lastPaintedXZ = new Vector2Int(HoveredCell.x, HoveredCell.z);
                     break;
                 case PainterTool.Substituir:
@@ -257,7 +282,7 @@ namespace LevelPainter
 
         private void HandleRightClick(Event e)
         {
-            EraseColumn(HoveredCell);
+            EraseTile(FindOccupiedCellInColumn(HoveredCell));
             e.Use();
             RepaintRequest?.Invoke();
         }
@@ -267,11 +292,12 @@ namespace LevelPainter
         private static Vector3 ComputeSnapOffset(TileItem tile, float rotationY)
         {
             if (tile?.prefab == null) return tile?.positionOffset ?? Vector3.zero;
-
-
             if (tile.snapMode == TileSnapMode.Manual)
                 return tile.positionOffset;
 
+            var key = (tile, rotationY);
+            if (_snapOffsetCache.TryGetValue(key, out var cached))
+                return cached;
 
             var temp = Object.Instantiate(tile.prefab);
             temp.hideFlags = HideFlags.HideAndDontSave;
@@ -311,8 +337,9 @@ namespace LevelPainter
                 ? 0f
                 : -combined.min.y;
 
-
-            return new Vector3(offsetX, offsetY, offsetZ) + tile.positionOffset;
+            Vector3 result = new Vector3(offsetX, offsetY, offsetZ) + tile.positionOffset;
+            _snapOffsetCache[key] = result;
+            return result;
         }
 
         private bool FindStackCell(Vector3Int baseCell, out Vector3Int resultCell, out Vector3 resultWorldPos)
@@ -372,6 +399,10 @@ namespace LevelPainter
             if (tile?.prefab == null || tile.snapMode == TileSnapMode.Manual)
                 return tile?.positionOffset.y ?? 0f;
 
+            var key = (tile, rotationY);
+            if (_pivotOffsetCache.TryGetValue(key, out var cached))
+                return cached;
+
             var temp = Object.Instantiate(tile.prefab);
             temp.hideFlags = HideFlags.HideAndDontSave;
 
@@ -394,10 +425,14 @@ namespace LevelPainter
             }
             Object.DestroyImmediate(temp);
 
-            if (!hasBounds) return tile.positionOffset.y;
+            if (!hasBounds) {
+                _pivotOffsetCache[key] = tile.positionOffset.y;
+                return tile.positionOffset.y;
+            }
 
-
-            return -combined.min.y + tile.positionOffset.y;
+            float result = -combined.min.y + tile.positionOffset.y;
+            _pivotOffsetCache[key] = result;
+            return result;
         }
 
 
@@ -447,7 +482,7 @@ namespace LevelPainter
             _db.Place(targetCell, new PlacedTile(
                 instance, SelectedTile.prefab,
                 SelectedTile.category, SelectedTile.tileName,
-                CurrentRotationY));
+                SelectedTile.rotationOffset.x, CurrentRotationY, SelectedTile.rotationOffset.z));
         }
 
         private void EraseTile(Vector3Int cell)
@@ -524,11 +559,8 @@ namespace LevelPainter
         {
             if (SelectedTile?.prefab == null) return;
 
-
-            Vector3Int occupied = FindOccupiedCellInColumn(cell);
-            if (_db.IsOccupied(occupied)) EraseTile(occupied);
-
-            Vector3Int targetCell = _db.IsOccupied(occupied) ? occupied : cell;
+            Vector3Int targetCell = FindOccupiedCellInColumn(cell);
+            EraseTile(targetCell);
 
             EnsureHierarchy();
             Vector3 snapOffset = ComputeSnapOffset(SelectedTile, CurrentRotationY);
@@ -552,7 +584,7 @@ namespace LevelPainter
             _db.Place(targetCell, new PlacedTile(
                 instance, SelectedTile.prefab,
                 SelectedTile.category, SelectedTile.tileName,
-                CurrentRotationY));
+                SelectedTile.rotationOffset.x, CurrentRotationY, SelectedTile.rotationOffset.z));
         }
 
 
@@ -896,9 +928,9 @@ namespace LevelPainter
                 Vector3 snapOffset = ComputeSnapOffset(found, tileData.rotationY);
                 Vector3 worldPos = _db.CellToWorld(cell) + snapOffset;
                 Quaternion rot = Quaternion.Euler(
-                    found.rotationOffset.x,
-                    tileData.rotationY + found.rotationOffset.y,
-                    found.rotationOffset.z);
+                    tileData.rotationX,
+                    tileData.rotationY,
+                    tileData.rotationZ);
 
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(found.prefab);
                 instance.transform.SetParent(GetCategoryRoot(found.category), true);
@@ -910,7 +942,7 @@ namespace LevelPainter
 
                 _db.Place(cell, new PlacedTile(
                     instance, found.prefab, found.category,
-                    found.tileName, tileData.rotationY));
+                    found.tileName, tileData.rotationX, tileData.rotationY, tileData.rotationZ));
             }
         }
     }
